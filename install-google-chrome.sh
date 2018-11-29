@@ -106,6 +106,13 @@ echo "Downloaded ${rpm_file}"
 rpm -ih --nodeps ${rpm_file}
 rm ${rpm_file}
 
+chrome_version=$(yum info  google-chrome-stable|grep -e "Version\b.*[d\.]*"|cut -d ':' -f2|cut -d "." -f1,2,3|awk '{$1=$1};1')
+exact_chrome_version=$(curl https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${chrome_version})
+rm chromedriver_linux64.zip
+wget  https://chromedriver.storage.googleapis.com/${exact_chrome_version}/chromedriver_linux64.zip
+unzip -o chromedriver_linux64.zip -d /opt/google/chrome
+mv /opt/google/chrome/chromedriver /opt/google/chrome/chromedriver-sandbox
+
 
 # Install font dependencies, see: https://bugs.chromium.org/p/chromium/issues/detail?id=782161
 echo "Installing the required font dependencies."
@@ -227,7 +234,9 @@ function install_missing_dependencies() {
 
 # Install the missing dependencies for Chrome.
 install_missing_dependencies /opt/google/chrome/chrome
-
+echo "installing  missing  deps for chromedriver "
+install_missing_dependencies /opt/google/chrome/chromedriver-sandbox
+echo "chromedriver updated"
 
 if ! installation_status; then
     # Time for the big guns, we'll try to patch the executables to use our lib directory.
@@ -242,7 +251,15 @@ if ! installation_status; then
     LD="$({ ls -1 ${lib_directory}/ld-linux* | head -n1 ; } 2> /dev/null)"
     ./src/patchelf --set-interpreter "${LD}" --set-rpath "${lib_directory}" /opt/google/chrome/chrome
     ./src/patchelf --set-interpreter "${LD}" --set-rpath "${lib_directory}" /opt/google/chrome/chrome-sandbox
+    echo "******patching chromedriver*******"
+    ./src/patchelf --set-interpreter "${LD}" --set-rpath "${lib_directory}" /opt/google/chrome/chromedriver-sandbox
     sed -i 's/\(.*exec cat.*\)/LD_LIBRARY_PATH="" \1/g' /opt/google/chrome/google-chrome
+    head -n -1 /opt/google/chrome/google-chrome > temp.txt 
+    mv temp.txt /opt/google/chrome/chromedriver
+    echo 'exec -a "$0" "$HERE/chromedriver-sandbox" "$@"' >> /opt/google/chrome/chromedriver
+    chmod +x /opt/google/chrome/chromedriver
+    ln -s /opt/google/chrome/chromedriver /usr/bin/chromedriver 
+    
     popd > /dev/null
     echo "Attempted experimental patching of Chrome to use a relocated glibc version."
 fi
